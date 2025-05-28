@@ -1,119 +1,100 @@
-// src/components/Dashboard/EmployeeDashboard.jsx (or wherever TaskList is rendered)
-import React, { useState, useEffect, useContext } from "react";
-import { AuthContext } from "../../context/AuthProvider"; // Adjust path if necessary
-import TaskList from "../Others/TaskList"; // Adjust path if necessary
-import Header from "../Others/Header"; // Assuming you have a Header component
-import EmployeeDashboardHeader from "./EmployeeDashboardHeader"; // Assuming this exists
+import React from "react";
 
-const EmployeeDashboard = () => {
-    const { user: authUser, updateUserAuthData } = useContext(AuthContext);
-    const [employeeTasks, setEmployeeTasks] = useState([]);
-    const [employeeInfo, setEmployeeInfo] = useState(null); // To hold current employee data
+// Badge Colors
+const getStatusColor = (task) => {
+    if (task.failed) return "bg-rose-700";
+    if (task.completed) return "bg-emerald-700";
+    if (task.newTask) return "bg-purple-700";
+    if (task.active) return "bg-indigo-700";
+    return "bg-gray-700";
+};
 
-    useEffect(() => {
-        if (authUser && !authUser.admin) { // Ensure it's an employee user
-            // Find the current employee's data from the authUser.employees array
-            const currentEmployee = authUser.employees.find(
-                (emp) => emp.email === authUser.email
-            );
-            if (currentEmployee) {
-                setEmployeeInfo(currentEmployee);
-                setEmployeeTasks(currentEmployee.tasks);
-            }
-        }
-    }, [authUser]); // Re-run when authUser changes
+// Card Colors
+const getBoxColor = (task) => {
+    if (task.failed) return "bg-rose-600";
+    if (task.completed) return "bg-emerald-600";
+    if (task.newTask) return "bg-purple-600";
+    if (task.active) return "bg-indigo-600";
+    return "bg-slate-600";
+};
 
-    // This is the crucial function that needs to be updated for persistence
-    const updateTaskStatus = (taskIndex, newStatusFlags) => {
-        // Create a deep copy of the current authUser to avoid direct mutation
-        const updatedAuthUser = JSON.parse(JSON.stringify(authUser));
+// Status Text
+const getStatusText = (task) => {
+    if (task.failed) return "Failed";
+    if (task.completed) return "Completed";
+    if (task.newTask) return "New";
+    if (task.active) return "Accepted";
+    return "Task";
+};
 
-        // Find the current employee in the updated user data
-        const employeeToUpdateIndex = updatedAuthUser.employees.findIndex(
-            (emp) => emp.email === updatedAuthUser.email
-        );
-
-        if (employeeToUpdateIndex === -1) {
-            console.error("Current employee not found in authUser data.");
-            return;
-        }
-
-        const currentEmployee = updatedAuthUser.employees[employeeToUpdateIndex];
-
-        // Ensure tasks exist and the index is valid
-        if (!currentEmployee.tasks || taskIndex >= currentEmployee.tasks.length) {
-            console.error("Invalid task index or tasks array missing.");
-            return;
-        }
-
-        const taskToUpdate = currentEmployee.tasks[taskIndex];
-
-        // --- Update task status flags ---
-        const oldStatus = {
-            active: taskToUpdate.active,
-            newTask: taskToUpdate.newTask,
-            completed: taskToUpdate.completed,
-            failed: taskToUpdate.failed
-        };
-
-        taskToUpdate.active = newStatusFlags.active;
-        taskToUpdate.newTask = newStatusFlags.newTask;
-        taskToUpdate.completed = newStatusFlags.completed;
-        taskToUpdate.failed = newStatusFlags.failed;
-
-        // --- Update taskCount based on status change ---
-        // Decrement old status count
-        if (oldStatus.newTask) currentEmployee.taskCount.newTask--;
-        if (oldStatus.active) currentEmployee.taskCount.active--;
-        if (oldStatus.completed) currentEmployee.taskCount.completed--;
-        if (oldStatus.failed) currentEmployee.taskCount.failed--;
-
-        // Increment new status count
-        if (taskToUpdate.newTask) currentEmployee.taskCount.newTask++;
-        if (taskToUpdate.active) currentEmployee.taskCount.active++;
-        if (taskToUpdate.completed) currentEmployee.taskCount.completed++;
-        if (taskToUpdate.failed) currentEmployee.taskCount.failed++;
-        // If a new task is marked 'active' from 'new', the 'new' count should decrease
-        // (The logic above handles this by decrementing the old status and incrementing the new)
-
-        // --- Update the employee object in the main array ---
-        updatedAuthUser.employees[employeeToUpdateIndex] = currentEmployee;
-
-        // --- Update the local state for immediate UI reflection ---
-        setEmployeeTasks(currentEmployee.tasks);
-        setEmployeeInfo(currentEmployee); // Update employee info with new taskCount
-
-        // --- PERSIST TO LOCAL STORAGE ---
-        // This is the critical step to make changes permanent
-        updateUserAuthData(updatedAuthUser.employees, updatedAuthUser.admin);
+const TaskList = ({ tasks, updateTask }) => {
+    // Handlers use the updateTask prop callback to update the parent state
+    const handleDone = (index) => {
+        updateTask(index, {
+            active: false,
+            newTask: false,
+            completed: true,
+            failed: false,
+        });
     };
 
-    if (!authUser || authUser.admin) {
-        // Handle case where admin tries to access or no user is logged in
-        return (
-            <div className="text-center text-white text-xl mt-20">
-                Access Denied. Please log in as an employee.
-            </div>
-        );
-    }
+    const handleFail = (index) => {
+        updateTask(index, {
+            active: false,
+            newTask: false,
+            completed: false,
+            failed: true,
+        });
+    };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-gray-900 text-white">
-            <Header /> {/* Your existing Header component */}
-            {employeeInfo && (
-                <EmployeeDashboardHeader employee={employeeInfo} /> // Pass employee info for task counts
-            )}
+        <div
+            id="tasklist"
+            className="h-[50%] overflow-x-auto flex items-start gap-5 flex-nowrap w-full py-5 mt-10 scrollbar-hide"
+        >
+            {tasks.map((task, index) => (
+                <div
+                    key={index}
+                    className={`flex-shrink-0 w-[300px] min-h-[250px] p-5 rounded-xl text-white shadow-md transition-transform transform hover:scale-105 hover:shadow-xl cursor-pointer ${getBoxColor(task)}`}
+                >
+                    {/* Category + Status */}
+                    <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="px-2 py-1 rounded-full bg-white bg-opacity-20 text-white">
+                            {task.category}
+                        </span>
+                        <span
+                            className={`px-3 py-1 rounded-full font-semibold ${getStatusColor(task)}`}
+                        >
+                            {getStatusText(task)}
+                        </span>
+                    </div>
 
-            <main className="container mx-auto px-4 py-8">
-                <h1 className="text-3xl font-bold mb-6">My Tasks</h1>
-                {employeeTasks.length > 0 ? (
-                    <TaskList tasks={employeeTasks} updateTask={updateTaskStatus} />
-                ) : (
-                    <p className="text-center text-gray-400 mt-10">No tasks assigned yet.</p>
-                )}
-            </main>
+                    {/* Title/Description */}
+                    <h2 className="mt-3 text-xl font-bold">{task.taskTitle}</h2>
+                    <p className="text-sm mt-2 text-gray-100">{task.taskDescription}</p>
+                    <div className="text-xs text-gray-200 mt-2">{task.taskDate}</div>
+
+                    {/* Only show buttons for new or active tasks */}
+                    {(task.newTask || task.active) && (
+                        <div className="flex justify-between mt-4 gap-2">
+                            <button
+                                onClick={() => handleDone(index)}
+                                className="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-full"
+                            >
+                                Mark as Done
+                            </button>
+                            <button
+                                onClick={() => handleFail(index)}
+                                className="flex-1 bg-rose-700 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded-full"
+                            >
+                                Mark as Failed
+                            </button>
+                        </div>
+                    )}
+                </div>
+            ))}
         </div>
     );
 };
 
-export default EmployeeDashboard;
+export default TaskList;
