@@ -1,117 +1,108 @@
-// src/components/Dashboard/EmployeeDashboard.jsx (or wherever TaskList is rendered)
 import React, { useState, useEffect, useContext } from "react";
-import { AuthContext } from "../../context/AuthProvider"; // Adjust path if necessary
-import TaskList from "../Others/TaskList"; // Adjust path if necessary
-import Header from "../Others/Header"; // Assuming you have a Header component
-import EmployeeDashboardHeader from "./EmployeeDashboardHeader"; // Assuming this exists
+import TaskList from "../Others/TaskList";
+import TaskListNumber from "../Others/TaskListNumber";
+import Header from "../Others/Header";
+import { AuthContext } from "../../context/AuthProvider"; // Import AuthContext
 
-const EmployeeDashboard = () => {
+const EmployeeDashboard = ({ userData }) => {
+    // Access authUser and updateUserAuthData from AuthContext
     const { user: authUser, updateUserAuthData } = useContext(AuthContext);
+
     const [employeeTasks, setEmployeeTasks] = useState([]);
-    const [employeeInfo, setEmployeeInfo] = useState(null); // To hold current employee data
+    const [currentEmployeeData, setCurrentEmployeeData] = useState(null); // State to hold the full current employee object
 
     useEffect(() => {
-        if (authUser && !authUser.admin) { // Ensure it's an employee user
-            // Find the current employee's data from the authUser.employees array
-            const currentEmployee = authUser.employees.find(
-                (emp) => emp.email === authUser.email
+        // Ensure authUser and userData are available and consistent
+        if (authUser && userData && authUser.employees) {
+            // Find the current employee's full data from the AuthContext's employee list
+            const foundEmployee = authUser.employees.find(
+                (emp) => emp.email === userData.email
             );
-            if (currentEmployee) {
-                setEmployeeInfo(currentEmployee);
-                setEmployeeTasks(currentEmployee.tasks);
+
+            if (foundEmployee) {
+                setCurrentEmployeeData(foundEmployee);
+                setEmployeeTasks(foundEmployee.tasks);
+            } else {
+                // This case should ideally be handled by App.jsx, but as a fallback:
+                console.warn("Logged in employee data not found in AuthContext. Clearing local data.");
+                localStorage.removeItem("loggedInUser");
+                // A full page reload might be necessary here if the App.jsx doesn't catch this
+                // window.location.reload();
             }
         }
-    }, [authUser]); // Re-run when authUser changes
+    }, [userData, authUser]); // Depend on userData (from App.jsx) and authUser (from AuthContext)
 
-    // This is the crucial function that needs to be updated for persistence
-    const updateTaskStatus = (taskIndex, newStatusFlags) => {
-        // Create a deep copy of the current authUser to avoid direct mutation
+    // Display a loading message if employee data is not yet available
+    // This is a fallback, as App.jsx should handle the primary loading splash
+    if (!currentEmployeeData || !employeeTasks) {
+        return <div className="text-center mt-10 text-white">Loading employee dashboard...</div>;
+    }
+
+    // Extract first name for Header
+    const firstName = currentEmployeeData.first_name || "User";
+
+    // Compute task counts from the current employee's data
+    const taskCount = {
+        newTask: employeeTasks.filter((t) => t.newTask).length,
+        completed: employeeTasks.filter((t) => t.completed).length,
+        active: employeeTasks.filter((t) => t.active).length,
+        failed: employeeTasks.filter((t) => t.failed).length,
+    };
+
+    // Handler to update task status and persist to localStorage
+    const updateTask = (index, updates) => {
+        // Create a deep copy of the current AuthContext user data to ensure immutability
         const updatedAuthUser = JSON.parse(JSON.stringify(authUser));
 
-        // Find the current employee in the updated user data
-        const employeeToUpdateIndex = updatedAuthUser.employees.findIndex(
-            (emp) => emp.email === updatedAuthUser.email
+        // Find the index of the current employee within the copied employees array
+        const employeeIndexInAuth = updatedAuthUser.employees.findIndex(
+            (emp) => emp.email === currentEmployeeData.email
         );
 
-        if (employeeToUpdateIndex === -1) {
-            console.error("Current employee not found in authUser data.");
+        if (employeeIndexInAuth === -1) {
+            console.error("Error: Current employee not found in AuthContext data during task update.");
             return;
         }
 
-        const currentEmployee = updatedAuthUser.employees[employeeToUpdateIndex];
+        const employeeToModify = updatedAuthUser.employees[employeeIndexInAuth];
 
-        // Ensure tasks exist and the index is valid
-        if (!currentEmployee.tasks || taskIndex >= currentEmployee.tasks.length) {
-            console.error("Invalid task index or tasks array missing.");
+        // Ensure tasks array exists and index is valid
+        if (!employeeToModify.tasks || index >= employeeToModify.tasks.length) {
+            console.error("Error: Invalid task index during update.");
             return;
         }
 
-        const taskToUpdate = currentEmployee.tasks[taskIndex];
-
-        // --- Update task status flags ---
-        const oldStatus = {
-            active: taskToUpdate.active,
-            newTask: taskToUpdate.newTask,
-            completed: taskToUpdate.completed,
-            failed: taskToUpdate.failed
-        };
-
-        taskToUpdate.active = newStatusFlags.active;
-        taskToUpdate.newTask = newStatusFlags.newTask;
-        taskToUpdate.completed = newStatusFlags.completed;
-        taskToUpdate.failed = newStatusFlags.failed;
+        const taskToUpdate = employeeToModify.tasks[index];
 
         // --- Update taskCount based on status change ---
         // Decrement old status count
-        if (oldStatus.newTask) currentEmployee.taskCount.newTask--;
-        if (oldStatus.active) currentEmployee.taskCount.active--;
-        if (oldStatus.completed) currentEmployee.taskCount.completed--;
-        if (oldStatus.failed) currentEmployee.taskCount.failed--;
+        if (taskToUpdate.newTask) employeeToModify.taskCount.newTask--;
+        if (taskToUpdate.active) employeeToModify.taskCount.active--;
+        if (taskToUpdate.completed) employeeToModify.taskCount.completed--;
+        if (taskToUpdate.failed) employeeToModify.taskCount.failed--;
+
+        // Apply new status flags to the task
+        employeeToModify.tasks[index] = { ...taskToUpdate, ...updates };
 
         // Increment new status count
-        if (taskToUpdate.newTask) currentEmployee.taskCount.newTask++;
-        if (taskToUpdate.active) currentEmployee.taskCount.active++;
-        if (taskToUpdate.completed) currentEmployee.taskCount.completed++;
-        if (taskToUpdate.failed) currentEmployee.taskCount.failed++;
-        // If a new task is marked 'active' from 'new', the 'new' count should decrease
-        // (The logic above handles this by decrementing the old status and incrementing the new)
+        if (employeeToModify.tasks[index].newTask) employeeToModify.taskCount.newTask++;
+        if (employeeToModify.tasks[index].active) employeeToModify.taskCount.active++;
+        if (employeeToModify.tasks[index].completed) employeeToModify.taskCount.completed++;
+        if (employeeToModify.tasks[index].failed) employeeToModify.taskCount.failed++;
 
-        // --- Update the employee object in the main array ---
-        updatedAuthUser.employees[employeeToUpdateIndex] = currentEmployee;
+        // Update the local state for immediate UI reflection
+        setEmployeeTasks(employeeToModify.tasks);
+        setCurrentEmployeeData(employeeToModify); // Update current employee data with new task counts
 
-        // --- Update the local state for immediate UI reflection ---
-        setEmployeeTasks(currentEmployee.tasks);
-        setEmployeeInfo(currentEmployee); // Update employee info with new taskCount
-
-        // --- PERSIST TO LOCAL STORAGE ---
-        // This is the critical step to make changes permanent
+        // --- PERSIST CHANGES TO LOCAL STORAGE VIA AuthContext ---
         updateUserAuthData(updatedAuthUser.employees, updatedAuthUser.admin);
     };
 
-    if (!authUser || authUser.admin) {
-        // Handle case where admin tries to access or no user is logged in
-        return (
-            <div className="text-center text-white text-xl mt-20">
-                Access Denied. Please log in as an employee.
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-gray-900 text-white">
-            <Header /> {/* Your existing Header component */}
-            {employeeInfo && (
-                <EmployeeDashboardHeader employee={employeeInfo} /> // Pass employee info for task counts
-            )}
-
-            <main className="container mx-auto px-4 py-8">
-                <h1 className="text-3xl font-bold mb-6">My Tasks</h1>
-                {employeeTasks.length > 0 ? (
-                    <TaskList tasks={employeeTasks} updateTask={updateTaskStatus} />
-                ) : (
-                    <p className="text-center text-gray-400 mt-10">No tasks assigned yet.</p>
-                )}
-            </main>
+        <div className="p-10 text-white min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-gray-900"> {/* Applied gradient background */}
+            <Header data={{ first_name: firstName }} />
+            <TaskListNumber data={{ taskCount }} />
+            <TaskList tasks={employeeTasks} updateTask={updateTask} />
         </div>
     );
 };
